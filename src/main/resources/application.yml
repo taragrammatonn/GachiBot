@@ -1,5 +1,5 @@
 discord:
-  token: ${token}
+  token: ${bot_token}
   oauth2:
-    clientId: ${clientId}
-    clientSecret: ${client_secres}
+    clientId: ${client_id}
+    clientSecret: ${client_secret}
