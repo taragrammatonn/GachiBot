@@ -1,0 +1,5 @@
+discord:
+  token: ${token}
+  oauth2:
+    clientId: ${clientId}
+    clientSecret: ${client_secres}

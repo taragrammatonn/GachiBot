@@ -1,0 +1,19 @@
+{
+  "properties": [
+    {
+      "name": "discord.oauth2.clientSecret",
+      "type": "java.lang.String",
+      "description": "Client secret key for OAuth2 Authorization."
+    },
+    {
+      "name": "discord.oauth2.clientId",
+      "type": "java.lang.String",
+      "description": "Bot Client ID."
+    },
+    {
+      "name": "discord.token",
+      "type": "java.lang.String",
+      "description": "Discord Token."
+    }
+  ]
+}
