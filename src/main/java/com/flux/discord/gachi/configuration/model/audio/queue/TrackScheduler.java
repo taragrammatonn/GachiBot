@@ -1,4 +1,4 @@
-package com.flux.discord.gachi.configuration.model.audio;
+package com.flux.discord.gachi.configuration.model.audio.queue;
 
 import com.sedmelluq.discord.lavaplayer.player.AudioPlayer;
 import com.sedmelluq.discord.lavaplayer.player.event.AudioEventAdapter;
@@ -58,5 +58,9 @@ public class TrackScheduler extends AudioEventAdapter {
         if (endReason.mayStartNext) {
             nextTrack();
         }
+    }
+
+    public BlockingQueue<AudioTrack> getQueue() {
+        return queue;
     }
 }

@@ -15,6 +15,7 @@ import com.sedmelluq.discord.lavaplayer.track.AudioTrack;
 import com.sedmelluq.discord.lavaplayer.track.BasicAudioPlaylist;
 import lombok.extern.log4j.Log4j2;
 import net.dv8tion.jda.api.entities.Guild;
+import net.dv8tion.jda.api.entities.Member;
 import net.dv8tion.jda.api.entities.TextChannel;
 import net.dv8tion.jda.api.entities.VoiceChannel;
 import net.dv8tion.jda.api.events.message.guild.GuildMessageReceivedEvent;
@@ -32,7 +33,6 @@ import org.jetbrains.annotations.NotNull;
 import org.springframework.stereotype.Component;
 
 import java.util.*;
-import java.util.stream.Collectors;
 
 @Log4j2
 public abstract class Listener {
@@ -168,6 +168,8 @@ public abstract class Listener {
     @Component
     public static class MusicListener extends ListenerAdapter {
 
+        public static final List<String> commands = List.of("!play", "!skip", "!pause", "!stop", "!volume", "!next");
+
         private final AudioPlayerManager playerManager;
         private final Map<Long, GuildMusicManager> musicManagers;
 
@@ -181,31 +183,46 @@ public abstract class Listener {
 
         @Override
         public void onGuildMessageReceived(@NotNull GuildMessageReceivedEvent event) {
-            String[] command = event.getMessage().getContentRaw().split(" ", 2);
+            String[] command = event.getMessage().getContentRaw().split(" ", 3);
+            String nickname = event.getMember().getNickname() != null ? event.getMember().getNickname() : event.getMember().getUser().getName();
+            log.info("Message from :" + nickname + ". Message content: " + event.getMessage().getContentRaw() + ".");
+
+            if (command[0].contains("!") && !commands.contains(command[0]))
+                event.getChannel().sendMessage("Нахуй пошёл.").queue();
 
             switch (command[0]) {
-                case "!play" -> loadAndPlay(event.getChannel(), command);
-                case "!skip" -> skipTrack(event.getChannel());
+                case "!play" -> loadAndPlay(event.getChannel(), event.getMember().getUser().getId(), command);
+                case "!skip", "!next" -> skipTrack(event.getChannel());
                 case "!pause" -> pauseTrack(event.getChannel());
                 case "!stop" -> stopTrack(event.getChannel());
+                case "!volume" -> setVolume(event.getChannel(), command[1]);
             }
         }
 
-        private void loadAndPlay(final TextChannel channel, final String[] commands) {
+        private void setVolume(final TextChannel channel, String s) {
+            GuildMusicManager musicManager = getGuildAudioPlayer(channel.getGuild());
+            try {
+                musicManager.player.setVolume(Integer.parseInt(s));
+            } catch (Exception ex) {
+                channel.sendMessage("Invalid command, asshole.").queue();
+            }
+        }
+
+        private void loadAndPlay(final TextChannel channel, String userId, final String[] commands) {
             if (commands.length < 2) {
                 channel.sendMessage("WE WE. What the fuck should I play, You sun of a bitch.").queue();
                 return;
             }
 
-            String trackUrl = commands[1];
+            String trackUrl = commands.length == 3 ? commands[2] : commands[1];
 
             GuildMusicManager musicManager = getGuildAudioPlayer(channel.getGuild());
 
             playerManager.loadItemOrdered(musicManager, trackUrl, new AudioLoadResultHandler() {
                 @Override
                 public void trackLoaded(AudioTrack audioTrack) {
-                    channel.sendMessage("Adding finger to queue in your ass " + audioTrack.getInfo().title).queue();
-                    play(channel.getGuild(), musicManager, audioTrack);
+                    channel.sendMessage("Adding finger to queue in your ass " + audioTrack.getInfo().title + ".").queue();
+                    play(channel.getGuild(), musicManager, userId, audioTrack);
                 }
 
                 @Override
@@ -215,25 +232,31 @@ public abstract class Listener {
                     if (firstTrack == null)
                         firstTrack = audioPlaylist.getTracks().get(0);
 
+                    Runnable runnable;
+
                     if (audioPlaylist.getTracks().size() > 1) {
                         audioPlaylist.getTracks().remove(firstTrack);
                         List<AudioTrack> firstNElementsList = audioPlaylist.getTracks().stream().limit(60).toList();
                         AudioPlaylist playlist = new BasicAudioPlaylist(firstTrack.getIdentifier(), firstNElementsList, firstTrack, false);
-
                         channel.sendMessage("Found " + audioPlaylist.getTracks().size() +
                                 " tracks, looks like we start GAY PARTY. :rainbow_flag: :rainbow_flag: :rainbow_flag:").queue();
-                        Runnable runnable = () -> musicManager.scheduler.queue(playlist);
+
+                        if (commands[1].equalsIgnoreCase("!random")) {
+                            runnable = () -> musicManager.randomScheduler.queue(playlist);
+                        } else {
+                            runnable = () -> musicManager.scheduler.queue(playlist);
+                        }
                         new Thread(runnable).start();
                     }
 
-                    channel.sendMessage("Full master added to queue " + firstTrack.getInfo().title + " (fist track for my ass " + audioPlaylist.getName() + ")").queue();
+                    channel.sendMessage("Full master added to queue " + firstTrack.getInfo().title + " (fist track for my ass " + audioPlaylist.getName() + ").").queue();
 
-                    play(channel.getGuild(), musicManager, firstTrack);
+                    play(channel.getGuild(), musicManager, userId, firstTrack);
                 }
 
                 @Override
                 public void noMatches() {
-                    channel.sendMessage("Nothing found on this shit" + trackUrl + ". Stick your finger in my ass.").queue();
+                    channel.sendMessage("Nothing found on this shit " + trackUrl + ". Stick your finger in my ass.").queue();
                 }
 
                 @Override
@@ -257,19 +280,18 @@ public abstract class Listener {
             return musicManager;
         }
 
-        private void play(Guild guild, GuildMusicManager musicManager, AudioTrack track) {
-            connectToFirstVoiceChannel(guild.getAudioManager());
-            musicManager.scheduler.queue(track);
-        }
-
-        private void play(Guild guild, GuildMusicManager musicManager, AudioPlaylist playlist) {
-            connectToFirstVoiceChannel(guild.getAudioManager());
-            musicManager.scheduler.queue(playlist);
+        private void play(Guild guild, GuildMusicManager musicManager, String userId, AudioTrack track) {
+            connectToFirstVoiceChannel(guild.getAudioManager(), userId);
+            if (musicManager.scheduler.getQueue().isEmpty())
+                musicManager.randomScheduler.queue(track);
+            else musicManager.scheduler.queue(track);
         }
 
         private void skipTrack(TextChannel channel) {
             GuildMusicManager musicManager = getGuildAudioPlayer(channel.getGuild());
-            musicManager.scheduler.nextTrack();
+            if (musicManager.scheduler.getQueue().isEmpty())
+                musicManager.randomScheduler.nextTrack(musicManager.player.getPlayingTrack());
+            else musicManager.scheduler.nextTrack();
 
             channel.sendMessage("Skipped to next track.").queue();
         }
@@ -282,21 +304,23 @@ public abstract class Listener {
                     musicManager.player.isPaused() ?
                             "Paused this shit." :
                             "Sticking finger..."
-                    ).queue();
+            ).queue();
         }
 
         private void stopTrack(TextChannel channel) {
             GuildMusicManager musicManager = getGuildAudioPlayer(channel.getGuild());
             musicManager.player.stopTrack();
 
-            channel.sendMessage("Stopped. Lets anal").queue();
+            channel.sendMessage("Stopped. Lets anal.").queue();
         }
 
-        private static void connectToFirstVoiceChannel(AudioManager audioManager) {
-            if (!audioManager.isConnected() && audioManager.isConnected()) {
-                for (VoiceChannel voiceChannel : audioManager.getGuild().getVoiceChannels()) {
-                    audioManager.openAudioConnection(voiceChannel);
-                    break;
+        private static void connectToFirstVoiceChannel(AudioManager audioManager, String userId) {
+            for (VoiceChannel voiceChannel : audioManager.getGuild().getVoiceChannels()) {
+                for (Member member : voiceChannel.getMembers()) {
+                    if (member.getUser().getId().equals(userId)) {
+                        audioManager.openAudioConnection(voiceChannel);
+                        break;
+                    }
                 }
             }
         }
